@@ -344,6 +344,7 @@ def log_sinkhorn(X, Y, C, N, epsilon, lam, verbose=False, plan=False, training=F
                     Wass_diff = (bdot(mm(C*K, exp_alpha), exp_beta) - epsilon) > (0.001 if not training else 0.1)
                     L1_diff = (Z.view(Z.size()[0], -1).sum(dim=1) - 1).abs() > (0.01 if not training else l1_delta)
                     if L1_diff.any() or Wass_diff.any():
+                        print(f'terminate at iteration {i} the value was: {(Z.view(Z.size()[0], -1).sum(dim=1) - 1).abs().max().item()}')
                         not_closed = not_closed | L1_diff | Wass_diff
                         continue
                     if verbose: 

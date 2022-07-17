@@ -139,11 +139,11 @@ def attack(X,y, net, epsilon=0.01, epsilon_iters=10, epsilon_factor=1.1,
             if err.all() or t == maxiters: 
                 break
 
-            if t > 0 and t % epsilon_iters == 0: 
-                if multiply:
-                    epsilon_plan[~err] *= epsilon_factor
-                else:
-                    epsilon_plan[~err] += epsilon_factor
+            # if t > 0 and t % epsilon_iters == 0:
+            #     if multiply:
+            #         epsilon_plan[~err] *= epsilon_factor
+            #     else:
+            #         epsilon_plan[~err] += epsilon_factor
 
-    epsilon_best[~err] = float('inf')
+    # epsilon_best[~err] = float('inf')
     return X_best, err_best, epsilon_best
