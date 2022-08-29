@@ -1,4 +1,6 @@
 '''Attack a CIFAR-10 model with a Wasserstein adversary.'''
+import time
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,7 +15,7 @@ from utils import progress_bar
 from pgd import attack
 
 
-def craft(rank, args, dataloader_list, res_path, eps_list):
+def craft(rank, args, dataloader_list, dataloader_path, result_path, eps_list):
     if args.norm == 'linfinity':
         args.alpha = 0.1
     elif args.norm == 'grad':
@@ -38,7 +40,8 @@ def craft(rank, args, dataloader_list, res_path, eps_list):
     # Data
     print(f'{rank} ==> Preparing data..')
 
-    testloader = torch.load(os.path.join(res_path, f'{fparam[0]}_{rank}_dtl.pt'))
+    testloader = torch.load(os.path.join(dataloader_path, f'{fparam[0]}_{rank}_dtl.pt'))
+    torch.save(testloader, f'{result_path}/improved_{rank}_dtl.pt')
     mu = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float, device=device).unsqueeze(-1).unsqueeze(-1)
     std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float, device=device).unsqueeze(-1).unsqueeze(-1)
 
@@ -72,8 +75,10 @@ def craft(rank, args, dataloader_list, res_path, eps_list):
     for eps in eps_list:
         adv_samples = []
         perturbations = []
+        durations = []
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
+            start_time = time.time()
             inputs_pgd, _, epsilons = attack(torch.clamp(unnormalize(inputs),min=0),
                                              targets, net,
                                              normalize=normalize,
@@ -89,6 +94,8 @@ def craft(rank, args, dataloader_list, res_path, eps_list):
                                              use_tqdm=True,
                                              constrained_sinkhorn=not args.unconstrained,
                                              maxiters=args.maxiters)
+            duration = time.time() - start_time
+            durations.append(duration)
             if (epsilons.mean() - eps).abs() > 1e-6:
                 print(f'{rank} ==> epsilon is not constant! d_eps = {(epsilons.mean() - eps).abs()}')
                 raise ValueError(f'{epsilons.mean()} != {eps}')
@@ -112,10 +119,12 @@ def craft(rank, args, dataloader_list, res_path, eps_list):
             acc = 100.*correct/total
         adv_samples = torch.cat(adv_samples, dim=0)
         perturbations = torch.cat(perturbations, dim=0)
-        adv_path = f'results_iwass/improved_wasserstein_{eps:.5f}_{rank}.pt'
-        prt_path = f'results_iwass/improved_wasserstein_{eps:.5f}_{rank}_prt.pt'
+        adv_path = f'{result_path}/improved_wasserstein_{eps:.5f}_{rank}.pt'
+        prt_path = f'{result_path}/improved_wasserstein_{eps:.5f}_{rank}_prt.pt'
+        dur_path = f'{result_path}/improved_wasserstein_{eps:.5f}_{rank}_dur.pt'
         torch.save(adv_samples, adv_path)
         torch.save(perturbations, prt_path)
+        torch.save(durations, dur_path)
 
 
 
@@ -143,6 +152,7 @@ if __name__ == "__main__":
     parser.add_argument('--preset', default='new_clamping')
 
     parser.add_argument('--dtl_folder', type=str, default='../adversarial_arena/results')
+    parser.add_argument('--result_path', type=str, default='results_iwass')
     parser.add_argument('--n_procs', type=int, default=8)
     parser.add_argument('--eps_start', type=float, default=0.05)
     parser.add_argument('--eps_end', type=float, default=1.0)
@@ -150,8 +160,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if not os.path.exists(args.result_path):
+        os.makedirs(args.result_path)
+
     file_list = os.listdir(args.dtl_folder)
     dataloader_list = [f for f in file_list if f.endswith('dtl.pt')]
 
     eps_list = np.linspace(args.eps_start, args.eps_end, args.eps_count)
-    mp.spawn(fn=craft, args=(args, dataloader_list, args.dtl_folder, eps_list), nprocs=args.n_procs)
+    mp.spawn(fn=craft, args=(args, dataloader_list, args.dtl_folder, args.result_path, eps_list), nprocs=args.n_procs)
